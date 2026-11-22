@@ -88,7 +88,7 @@
                     </button>
                 </div>
                 <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hidden">
-                <p id="refNumError" class="text-xs text-red-500 mt-1 hidden">⚠️ Duplicate reference number!</p>
+                <p id="refNumError" class="text-xs text-red-500 mt-1 hidden font-semibold"></p>
                 <p class="text-[10px] text-gray-400 mt-1">Tip: Ensure "Ref No." and the 13 digits are clear, flat, and well-lit.</p>
             </div>
             <div>
@@ -264,17 +264,49 @@
             const refNumError = document.getElementById('refNumError');
             const saveBtn = document.getElementById('saveBtn');
 
+            // SMART DUPLICATE CHECKER (Exact + 6-digit suffix rule)
             refNumInput.addEventListener('input', (e) => {
-                const val = e.target.value.trim().toLowerCase();
-                if (val === '') { refNumError.classList.add('hidden'); refNumInput.classList.remove('input-error'); saveBtn.disabled = false; isDuplicate = false; return; }
-                const exists = transactions.some(t => t.refNum.toLowerCase() === val);
-                if (exists) { refNumError.classList.remove('hidden'); refNumInput.classList.add('input-error'); saveBtn.disabled = true; isDuplicate = true; } 
-                else { refNumError.classList.add('hidden'); refNumInput.classList.remove('input-error'); saveBtn.disabled = false; isDuplicate = false; }
+                const val = e.target.value.trim();
+                if (val === '') { 
+                    refNumError.classList.add('hidden'); 
+                    refNumInput.classList.remove('input-error'); 
+                    saveBtn.disabled = false; 
+                    isDuplicate = false; 
+                    return; 
+                }
+                
+                // 1. Check Exact Match
+                const existsExact = transactions.some(t => t.refNum.toLowerCase() === val.toLowerCase());
+                
+                // 2. Check 6-Digit Suffix Match (If input is exactly 6 digits)
+                let existsSuffix = false;
+                if (val.length === 6 && /^\d{6}$/.test(val)) {
+                    existsSuffix = transactions.some(t => t.refNum.endsWith(val));
+                }
+
+                if (existsExact) {
+                    isDuplicate = true;
+                    refNumError.textContent = "⚠️ Exact duplicate reference number!";
+                    refNumError.classList.remove('hidden');
+                    refNumInput.classList.add('input-error');
+                    saveBtn.disabled = true;
+                } else if (existsSuffix) {
+                    isDuplicate = true;
+                    refNumError.textContent = "⚠️ Matches the last 6 digits of an existing 13-digit Ref No.!";
+                    refNumError.classList.remove('hidden');
+                    refNumInput.classList.add('input-error');
+                    saveBtn.disabled = true;
+                } else {
+                    isDuplicate = false;
+                    refNumError.classList.add('hidden');
+                    refNumInput.classList.remove('input-error');
+                    saveBtn.disabled = false;
+                }
             });
             
             document.getElementById('transactionForm').addEventListener('submit', (e) => {
                 e.preventDefault();
-                if (isDuplicate) { showToast("⚠️ Duplicate Reference Number!"); return; }
+                if (isDuplicate) { showToast("⚠️ Cannot save: Duplicate Reference Number!"); return; }
                 const overlay = document.getElementById('loadingOverlay');
                 document.getElementById('loadingText').textContent = 'Saving transaction...';
                 overlay.classList.remove('hidden');
@@ -313,7 +345,7 @@
                 if (confirmInput.value === 'CONFIRM') { transactions = []; localStorage.removeItem('ck_transactions'); clearAllModal.classList.add('hidden'); currentPage = 1; renderAll(); showToast("✅ All data cleared successfully!"); }
             });
 
-            // --- IMPROVED OCR / SCAN LOGIC ---
+            // OCR / SCAN LOGIC
             const scanRefBtn = document.getElementById('scanRefBtn');
             const cameraInput = document.getElementById('cameraInput');
 
@@ -329,10 +361,7 @@
                 scanRefBtn.innerHTML = 'Scanning...';
 
                 try {
-                    // 1. Preprocess image to Black & White for better OCR
                     const processedImage = await preprocessImage(file);
-
-                    // 2. Run Tesseract OCR
                     const { data: { text } } = await Tesseract.recognize(processedImage, 'eng', {
                         logger: m => {
                             if(m.status === 'recognizing text') {
@@ -343,19 +372,13 @@
                     });
                     document.getElementById('loadingOverlay').classList.add('hidden');
 
-                    console.log("Raw OCR Text:", text);
-
-                    // 3. Smart Extraction Logic
                     let extractedNumber = "";
-                    
-                    // Regex 1: Look for "Ref No." followed by exactly 13 digits (allows spaces, dots, colons)
                     const refNoRegex = /Ref\s*\.?\s*No\s*\.?\s*[:\-]?\s*(\d{13})/i;
                     const match = text.match(refNoRegex);
 
                     if (match && match[1]) {
                         extractedNumber = match[1];
                     } else {
-                        // Regex 2: Fallback - Look for ANY 13-digit number in the text
                         const fallbackRegex = /\b(\d{13})\b/;
                         const fallbackMatch = text.match(fallbackRegex);
                         if (fallbackMatch && fallbackMatch[1]) {
@@ -365,7 +388,7 @@
 
                     if (extractedNumber) {
                         refNumInput.value = extractedNumber;
-                        refNumInput.dispatchEvent(new Event('input'));
+                        refNumInput.dispatchEvent(new Event('input')); // Trigger duplicate check
                         showToast("✅ Reference number scanned successfully!");
                     } else {
                         showToast("⚠️ Could not find 13-digit Ref No. Try a clearer picture.");
@@ -384,14 +407,12 @@
             renderAll();
         });
 
-        // Helper: Convert image to high-contrast Black & White for OCR
         function preprocessImage(file) {
             return new Promise((resolve) => {
                 const img = new Image();
                 img.onload = () => {
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d');
-                    // Resize if too large to speed up processing
                     const maxWidth = 1200;
                     let width = img.width;
                     let height = img.height;
@@ -404,10 +425,9 @@
                     const imageData = ctx.getImageData(0, 0, width, height);
                     const data = imageData.data;
 
-                    // Convert to Grayscale and apply Threshold (Binarization)
                     for (let i = 0; i < data.length; i += 4) {
                         const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-                        const val = avg > 140 ? 255 : 0; // Threshold
+                        const val = avg > 140 ? 255 : 0;
                         data[i] = val; data[i + 1] = val; data[i + 2] = val;
                     }
                     ctx.putImageData(imageData, 0, 0);
