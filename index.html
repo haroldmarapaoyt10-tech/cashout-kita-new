@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Cashout Kita</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Tesseract.js for OCR -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         body { font-family: system-ui, -apple-system, sans-serif; background-color: #f3f4f6; -webkit-tap-highlight-color: transparent; }
@@ -27,7 +26,7 @@
     <div id="loadingOverlay" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center backdrop-blur-sm">
         <div class="bg-white p-6 rounded-xl shadow-2xl flex flex-col items-center gap-4">
             <div class="animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-blue-600"></div>
-            <p class="text-gray-700 font-medium">Saving transaction...</p>
+            <p class="text-gray-700 font-medium" id="loadingText">Saving transaction...</p>
         </div>
     </div>
 
@@ -88,10 +87,9 @@
                         Scan
                     </button>
                 </div>
-                <!-- Hidden Camera Input -->
                 <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hidden">
                 <p id="refNumError" class="text-xs text-red-500 mt-1 hidden">⚠️ Duplicate reference number!</p>
-                <p class="text-[10px] text-gray-400 mt-1">Tip: Ensure the reference number is clear and well-lit for accurate scanning.</p>
+                <p class="text-[10px] text-gray-400 mt-1">Tip: Ensure "Ref No." and the 13 digits are clear, flat, and well-lit.</p>
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700">Cash-out amount (₱) *</label>
@@ -258,20 +256,9 @@
             
             document.getElementById('amount').addEventListener('input', calculateFee);
             
-            document.getElementById('rowsPerPage').addEventListener('change', (e) => {
-                rowsPerPage = parseInt(e.target.value);
-                currentPage = 1;
-                renderHistory();
-            });
-            
-            document.getElementById('prevPage').addEventListener('click', () => {
-                if (currentPage > 1) { currentPage--; renderHistory(); }
-            });
-            
-            document.getElementById('nextPage').addEventListener('click', () => {
-                const totalPages = Math.ceil(transactions.length / rowsPerPage) || 1;
-                if (currentPage < totalPages) { currentPage++; renderHistory(); }
-            });
+            document.getElementById('rowsPerPage').addEventListener('change', (e) => { rowsPerPage = parseInt(e.target.value); currentPage = 1; renderHistory(); });
+            document.getElementById('prevPage').addEventListener('click', () => { if (currentPage > 1) { currentPage--; renderHistory(); } });
+            document.getElementById('nextPage').addEventListener('click', () => { const totalPages = Math.ceil(transactions.length / rowsPerPage) || 1; if (currentPage < totalPages) { currentPage++; renderHistory(); } });
 
             const refNumInput = document.getElementById('refNum');
             const refNumError = document.getElementById('refNumError');
@@ -279,45 +266,26 @@
 
             refNumInput.addEventListener('input', (e) => {
                 const val = e.target.value.trim().toLowerCase();
-                if (val === '') {
-                    refNumError.classList.add('hidden');
-                    refNumInput.classList.remove('input-error');
-                    saveBtn.disabled = false;
-                    isDuplicate = false;
-                    return;
-                }
-                
+                if (val === '') { refNumError.classList.add('hidden'); refNumInput.classList.remove('input-error'); saveBtn.disabled = false; isDuplicate = false; return; }
                 const exists = transactions.some(t => t.refNum.toLowerCase() === val);
-                if (exists) {
-                    refNumError.classList.remove('hidden');
-                    refNumInput.classList.add('input-error');
-                    saveBtn.disabled = true;
-                    isDuplicate = true;
-                } else {
-                    refNumError.classList.add('hidden');
-                    refNumInput.classList.remove('input-error');
-                    saveBtn.disabled = false;
-                    isDuplicate = false;
-                }
+                if (exists) { refNumError.classList.remove('hidden'); refNumInput.classList.add('input-error'); saveBtn.disabled = true; isDuplicate = true; } 
+                else { refNumError.classList.add('hidden'); refNumInput.classList.remove('input-error'); saveBtn.disabled = false; isDuplicate = false; }
             });
             
             document.getElementById('transactionForm').addEventListener('submit', (e) => {
                 e.preventDefault();
                 if (isDuplicate) { showToast("⚠️ Duplicate Reference Number!"); return; }
-
                 const overlay = document.getElementById('loadingOverlay');
+                document.getElementById('loadingText').textContent = 'Saving transaction...';
                 overlay.classList.remove('hidden');
-
                 setTimeout(() => {
                     const refNum = refNumInput.value.trim();
                     const amount = parseFloat(document.getElementById('amount').value);
                     const date = document.getElementById('transDate').value;
                     const fee = calculateFee();
-
                     transactions.unshift({ id: Date.now(), refNum, amount, fee, date, timestamp: new Date().toISOString() });
                     localStorage.setItem('ck_transactions', JSON.stringify(transactions));
                     overlay.classList.add('hidden');
-                    
                     showToast("✅ Successfully recorded!");
                     clearForm();
                     document.getElementById('amount').focus();
@@ -326,58 +294,26 @@
             });
             
             document.getElementById('clearBtn').addEventListener('click', clearForm);
-            
             document.getElementById('saveFeeBtn').addEventListener('click', () => {
                 const newFee = parseFloat(document.getElementById('feePercentage').value);
-                if (newFee > 0) {
-                    feePercentage = newFee;
-                    localStorage.setItem('ck_feePercentage', feePercentage);
-                    document.getElementById('feePercentLabel').textContent = feePercentage;
-                    calculateFee();
-                    showToast("✅ Fee setting saved!");
-                }
+                if (newFee > 0) { feePercentage = newFee; localStorage.setItem('ck_feePercentage', feePercentage); document.getElementById('feePercentLabel').textContent = feePercentage; calculateFee(); showToast("✅ Fee setting saved!"); }
             });
-            
             document.getElementById('exportJsonBtn').addEventListener('click', exportToJSON);
             document.getElementById('exportExcelBtn').addEventListener('click', exportToCSV);
-            
-            document.getElementById('restoreFile').addEventListener('change', (e) => {
-                if (e.target.files[0]) { restoreBackup(e.target.files[0]); e.target.value = ''; }
-            });
+            document.getElementById('restoreFile').addEventListener('change', (e) => { if (e.target.files[0]) { restoreBackup(e.target.files[0]); e.target.value = ''; } });
 
-            // --- CLEAR ALL DATA MODAL LOGIC ---
+            // Clear All Modal
             const clearAllModal = document.getElementById('clearAllModal');
             const confirmInput = document.getElementById('confirmInput');
             const proceedClearBtn = document.getElementById('proceedClearBtn');
-            const cancelClearBtn = document.getElementById('cancelClearBtn');
-            const clearAllBtn = document.getElementById('clearAllBtn');
-
-            clearAllBtn.addEventListener('click', () => {
-                clearAllModal.classList.remove('hidden');
-                confirmInput.value = '';
-                proceedClearBtn.disabled = true;
-                setTimeout(() => confirmInput.focus(), 100);
-            });
-
-            cancelClearBtn.addEventListener('click', () => { clearAllModal.classList.add('hidden'); });
-
-            confirmInput.addEventListener('input', (e) => {
-                e.target.value = e.target.value.toUpperCase();
-                proceedClearBtn.disabled = e.target.value !== 'CONFIRM';
-            });
-
+            document.getElementById('clearAllBtn').addEventListener('click', () => { clearAllModal.classList.remove('hidden'); confirmInput.value = ''; proceedClearBtn.disabled = true; setTimeout(() => confirmInput.focus(), 100); });
+            document.getElementById('cancelClearBtn').addEventListener('click', () => { clearAllModal.classList.add('hidden'); });
+            confirmInput.addEventListener('input', (e) => { e.target.value = e.target.value.toUpperCase(); proceedClearBtn.disabled = e.target.value !== 'CONFIRM'; });
             proceedClearBtn.addEventListener('click', () => {
-                if (confirmInput.value === 'CONFIRM') {
-                    transactions = [];
-                    localStorage.removeItem('ck_transactions');
-                    clearAllModal.classList.add('hidden');
-                    currentPage = 1;
-                    renderAll();
-                    showToast("✅ All data cleared successfully!");
-                }
+                if (confirmInput.value === 'CONFIRM') { transactions = []; localStorage.removeItem('ck_transactions'); clearAllModal.classList.add('hidden'); currentPage = 1; renderAll(); showToast("✅ All data cleared successfully!"); }
             });
 
-            // --- OCR / SCAN REFERENCE NUMBER LOGIC ---
+            // --- IMPROVED OCR / SCAN LOGIC ---
             const scanRefBtn = document.getElementById('scanRefBtn');
             const cameraInput = document.getElementById('cameraInput');
 
@@ -387,37 +323,99 @@
                 const file = e.target.files[0];
                 if (!file) return;
 
-                showToast("📷 Scanning image... (First time may take a few seconds)");
+                showToast("📷 Processing image...");
                 scanRefBtn.disabled = true;
+                const originalBtnHtml = scanRefBtn.innerHTML;
                 scanRefBtn.innerHTML = 'Scanning...';
 
                 try {
-                    const { data: { text } } = await Tesseract.recognize(file, 'eng', {
-                        logger: m => console.log(m)
+                    // 1. Preprocess image to Black & White for better OCR
+                    const processedImage = await preprocessImage(file);
+
+                    // 2. Run Tesseract OCR
+                    const { data: { text } } = await Tesseract.recognize(processedImage, 'eng', {
+                        logger: m => {
+                            if(m.status === 'recognizing text') {
+                                document.getElementById('loadingText').textContent = `Scanning: ${Math.round(m.progress * 100)}%`;
+                                document.getElementById('loadingOverlay').classList.remove('hidden');
+                            }
+                        }
                     });
+                    document.getElementById('loadingOverlay').classList.add('hidden');
 
-                    // Clean up text: keep only alphanumeric and hyphens, remove spaces/newlines
-                    let cleanedText = text.replace(/[^a-zA-Z0-9\-]/g, '').trim();
+                    console.log("Raw OCR Text:", text);
 
-                    if (cleanedText) {
-                        refNumInput.value = cleanedText;
-                        refNumInput.dispatchEvent(new Event('input')); // Trigger duplicate check
-                        showToast("✅ Reference number scanned!");
+                    // 3. Smart Extraction Logic
+                    let extractedNumber = "";
+                    
+                    // Regex 1: Look for "Ref No." followed by exactly 13 digits (allows spaces, dots, colons)
+                    const refNoRegex = /Ref\s*\.?\s*No\s*\.?\s*[:\-]?\s*(\d{13})/i;
+                    const match = text.match(refNoRegex);
+
+                    if (match && match[1]) {
+                        extractedNumber = match[1];
                     } else {
-                        showToast("⚠️ Could not read text. Try a clearer image.");
+                        // Regex 2: Fallback - Look for ANY 13-digit number in the text
+                        const fallbackRegex = /\b(\d{13})\b/;
+                        const fallbackMatch = text.match(fallbackRegex);
+                        if (fallbackMatch && fallbackMatch[1]) {
+                            extractedNumber = fallbackMatch[1];
+                        }
+                    }
+
+                    if (extractedNumber) {
+                        refNumInput.value = extractedNumber;
+                        refNumInput.dispatchEvent(new Event('input'));
+                        showToast("✅ Reference number scanned successfully!");
+                    } else {
+                        showToast("⚠️ Could not find 13-digit Ref No. Try a clearer picture.");
                     }
                 } catch (err) {
                     console.error(err);
+                    document.getElementById('loadingOverlay').classList.add('hidden');
                     showToast("❌ Error scanning image.");
                 } finally {
                     scanRefBtn.disabled = false;
-                    scanRefBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg> Scan';
-                    cameraInput.value = ''; // Reset input
+                    scanRefBtn.innerHTML = originalBtnHtml;
+                    cameraInput.value = '';
                 }
             });
             
             renderAll();
         });
+
+        // Helper: Convert image to high-contrast Black & White for OCR
+        function preprocessImage(file) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    // Resize if too large to speed up processing
+                    const maxWidth = 1200;
+                    let width = img.width;
+                    let height = img.height;
+                    if (width > maxWidth) { height = (maxWidth / width) * height; width = maxWidth; }
+                    
+                    canvas.width = width;
+                    canvas.height = height;
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    const imageData = ctx.getImageData(0, 0, width, height);
+                    const data = imageData.data;
+
+                    // Convert to Grayscale and apply Threshold (Binarization)
+                    for (let i = 0; i < data.length; i += 4) {
+                        const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                        const val = avg > 140 ? 255 : 0; // Threshold
+                        data[i] = val; data[i + 1] = val; data[i + 2] = val;
+                    }
+                    ctx.putImageData(imageData, 0, 0);
+                    resolve(canvas.toDataURL('image/png'));
+                };
+                img.src = URL.createObjectURL(file);
+            });
+        }
 
         function calculateFee() {
             const amount = parseFloat(document.getElementById('amount').value) || 0;
@@ -461,11 +459,7 @@
         function renderHistory() {
             const tbody = document.getElementById('historyTableBody');
             tbody.innerHTML = '';
-            if (transactions.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-500">No transactions yet.</td></tr>';
-                updatePaginationControls(0);
-                return;
-            }
+            if (transactions.length === 0) { tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-500">No transactions yet.</td></tr>'; updatePaginationControls(0); return; }
             const totalPages = Math.ceil(transactions.length / rowsPerPage);
             if (currentPage > totalPages) currentPage = totalPages;
             const startIndex = (currentPage - 1) * rowsPerPage;
@@ -475,13 +469,7 @@
             paginatedTxns.forEach(t => {
                 const tr = document.createElement('tr');
                 tr.className = "border-b";
-                tr.innerHTML = `
-                    <td class="p-2 text-xs">${t.date}<br><span class="text-gray-400">${new Date(t.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span></td>
-                    <td class="p-2 font-medium">${t.refNum}</td>
-                    <td class="p-2 text-green-600">₱${t.amount.toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
-                    <td class="p-2 text-orange-600">₱${t.fee.toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
-                    <td class="p-2"><button onclick="deleteTransaction(${t.id})" class="text-red-500 text-xs font-bold">Delete</button></td>
-                `;
+                tr.innerHTML = `<td class="p-2 text-xs">${t.date}<br><span class="text-gray-400">${new Date(t.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span></td><td class="p-2 font-medium">${t.refNum}</td><td class="p-2 text-green-600">₱${t.amount.toLocaleString('en-PH', {minimumFractionDigits: 2})}</td><td class="p-2 text-orange-600">₱${t.fee.toLocaleString('en-PH', {minimumFractionDigits: 2})}</td><td class="p-2"><button onclick="deleteTransaction(${t.id})" class="text-red-500 text-xs font-bold">Delete</button></td>`;
                 tbody.appendChild(tr);
             });
             updatePaginationControls(totalPages);
@@ -496,19 +484,9 @@
         function setReportPeriod(period) {
             const customDiv = document.getElementById('customDateRange');
             const today = new Date().toISOString().split('T')[0];
-            if (period === 'today') {
-                customDiv.classList.add('hidden');
-                document.getElementById('reportFrom').value = today;
-                document.getElementById('reportTo').value = today;
-            } else if (period === 'month') {
-                customDiv.classList.add('hidden');
-                const firstDay = today.substring(0, 8) + '01';
-                document.getElementById('reportFrom').value = firstDay;
-                document.getElementById('reportTo').value = today;
-            } else {
-                customDiv.classList.remove('hidden');
-                return;
-            }
+            if (period === 'today') { customDiv.classList.add('hidden'); document.getElementById('reportFrom').value = today; document.getElementById('reportTo').value = today; } 
+            else if (period === 'month') { customDiv.classList.add('hidden'); const firstDay = today.substring(0, 8) + '01'; document.getElementById('reportFrom').value = firstDay; document.getElementById('reportTo').value = today; } 
+            else { customDiv.classList.remove('hidden'); return; }
             generateReport();
         }
 
@@ -527,9 +505,7 @@
             const dataStr = JSON.stringify(transactions, null, 2);
             const blob = new Blob([dataStr], { type: 'application/json;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url; a.download = 'cashout-kita-backup-' + new Date().toISOString().split('T')[0] + '.json';
-            a.style.display = 'none'; document.body.appendChild(a); a.click();
+            const a = document.createElement('a'); a.href = url; a.download = 'cashout-kita-backup-' + new Date().toISOString().split('T')[0] + '.json'; a.style.display = 'none'; document.body.appendChild(a); a.click();
             setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
             showToast("✅ JSON Backup exported!");
         }
@@ -537,17 +513,10 @@
         function exportToCSV() {
             if (transactions.length === 0) { showToast("Walang data i-export."); return; }
             let csvContent = "Date,Time,Reference Number,Cash-out Amount,Fee\n";
-            transactions.forEach(t => {
-                const date = t.date;
-                const time = new Date(t.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                const ref = `"${t.refNum.replace(/"/g, '""')}"`; 
-                csvContent += `${date},${time},${ref},${t.amount},${t.fee}\n`;
-            });
+            transactions.forEach(t => { const date = t.date; const time = new Date(t.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}); const ref = `"${t.refNum.replace(/"/g, '""')}"`; csvContent += `${date},${time},${ref},${t.amount},${t.fee}\n`; });
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url; a.download = 'cashout-kita-report-' + new Date().toISOString().split('T')[0] + '.csv';
-            a.style.display = 'none'; document.body.appendChild(a); a.click();
+            const a = document.createElement('a'); a.href = url; a.download = 'cashout-kita-report-' + new Date().toISOString().split('T')[0] + '.csv'; a.style.display = 'none'; document.body.appendChild(a); a.click();
             setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
             showToast("✅ Excel (CSV) exported!");
         }
@@ -561,9 +530,7 @@
                         transactions = [...data, ...transactions];
                         transactions = transactions.filter((v,i,a) => a.findIndex(t => t.id === v.id) === i);
                         localStorage.setItem('ck_transactions', JSON.stringify(transactions));
-                        currentPage = 1;
-                        renderAll();
-                        showToast("✅ Backup restored!");
+                        currentPage = 1; renderAll(); showToast("✅ Backup restored!");
                     }
                 } catch (err) { alert("Error: " + err.message); }
             };
