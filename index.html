@@ -18,15 +18,17 @@
         }
         #toast.show { visibility: visible; opacity: 1; bottom: 50px; }
         .input-error { border-color: #ef4444 !important; background-color: #fef2f2 !important; }
+        .word-box { transition: all 0.1s ease; }
+        .word-box.selected { background-color: rgba(59, 130, 246, 0.8) !important; color: white !important; border-color: #2563eb !important; }
     </style>
 </head>
 <body class="p-4 pb-20">
 
     <!-- Loading Overlay -->
-    <div id="loadingOverlay" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center backdrop-blur-sm">
-        <div class="bg-white p-6 rounded-xl shadow-2xl flex flex-col items-center gap-4">
+    <div id="loadingOverlay" class="hidden fixed inset-0 bg-black/50 z-[110] flex items-center justify-center backdrop-blur-sm">
+        <div class="bg-white p-6 rounded-xl shadow-2xl flex flex-col items-center gap-4 max-w-xs w-full mx-4">
             <div class="animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-blue-600"></div>
-            <p class="text-gray-700 font-medium" id="loadingText">Saving transaction...</p>
+            <p class="text-gray-700 font-medium text-center" id="loadingText">Processing image...</p>
         </div>
     </div>
 
@@ -44,6 +46,31 @@
             <div class="flex gap-3">
                 <button id="cancelClearBtn" class="flex-1 bg-gray-200 text-gray-700 font-bold py-2.5 rounded-lg hover:bg-gray-300 transition active:scale-95">Cancel</button>
                 <button id="proceedClearBtn" disabled class="flex-1 bg-red-600 text-white font-bold py-2.5 rounded-lg disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-red-700 transition active:scale-95">Delete All</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Smart Select Text Modal (Google Lens Style) -->
+    <div id="smartSelectModal" class="hidden fixed inset-0 bg-black/80 z-[105] flex flex-col p-2 sm:p-4 backdrop-blur-sm">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-auto flex flex-col max-h-[95vh] overflow-hidden">
+            <div class="p-3 border-b flex justify-between items-center bg-gray-50">
+                <h3 class="font-bold text-base text-gray-800 flex items-center gap-2">
+                    <span class="text-xl">🎯</span> Smart Select Text
+                </h3>
+                <button id="closeSelectModal" class="text-gray-500 hover:text-gray-800 text-2xl leading-none px-2">&times;</button>
+            </div>
+            <div class="p-2 text-xs text-gray-600 bg-blue-50 text-center border-b">
+                I-tap ang mga salita o numero na gusto mong kunin.
+            </div>
+            <div class="p-2 overflow-y-auto flex-1 flex justify-center bg-gray-200 min-h-[200px]">
+                <div id="imageWrapper" class="relative inline-block shadow-lg rounded-lg overflow-hidden bg-white">
+                    <img id="ocrPreviewImg" class="max-w-full h-auto block select-none pointer-events-none" />
+                    <div id="wordOverlay" class="absolute inset-0"></div>
+                </div>
+            </div>
+            <div class="p-3 border-t bg-gray-50 flex gap-2">
+                <button id="clearSelectionBtn" class="flex-1 bg-gray-200 text-gray-700 font-bold py-2.5 rounded-lg hover:bg-gray-300 transition active:scale-95">Clear</button>
+                <button id="confirmSelectionBtn" class="flex-1 bg-blue-600 text-white font-bold py-2.5 rounded-lg hover:bg-blue-700 transition active:scale-95 disabled:bg-gray-400 disabled:cursor-not-allowed">Use Selected</button>
             </div>
         </div>
     </div>
@@ -89,7 +116,7 @@
                 </div>
                 <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hidden">
                 <p id="refNumError" class="text-xs text-red-500 mt-1 hidden font-semibold"></p>
-                <p class="text-[10px] text-gray-400 mt-1">Tip: Ensure "Ref No." and the 13 digits are clear, flat, and well-lit.</p>
+                <p class="text-[10px] text-gray-400 mt-1">Tip: Tap "Scan", then tap the exact Ref No. on the image.</p>
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700">Cash-out amount (₱) *</label>
@@ -247,6 +274,7 @@
         let isDuplicate = false;
         let currentPage = 1;
         let rowsPerPage = 10;
+        let selectedWords = []; // For Smart Select
 
         document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('feePercentage').value = feePercentage;
@@ -264,43 +292,23 @@
             const refNumError = document.getElementById('refNumError');
             const saveBtn = document.getElementById('saveBtn');
 
-            // SMART DUPLICATE CHECKER (Exact + 6-digit suffix rule)
+            // SMART DUPLICATE CHECKER
             refNumInput.addEventListener('input', (e) => {
                 const val = e.target.value.trim();
-                if (val === '') { 
-                    refNumError.classList.add('hidden'); 
-                    refNumInput.classList.remove('input-error'); 
-                    saveBtn.disabled = false; 
-                    isDuplicate = false; 
-                    return; 
-                }
+                if (val === '') { refNumError.classList.add('hidden'); refNumInput.classList.remove('input-error'); saveBtn.disabled = false; isDuplicate = false; return; }
                 
-                // 1. Check Exact Match
                 const existsExact = transactions.some(t => t.refNum.toLowerCase() === val.toLowerCase());
-                
-                // 2. Check 6-Digit Suffix Match (If input is exactly 6 digits)
                 let existsSuffix = false;
                 if (val.length === 6 && /^\d{6}$/.test(val)) {
                     existsSuffix = transactions.some(t => t.refNum.endsWith(val));
                 }
 
                 if (existsExact) {
-                    isDuplicate = true;
-                    refNumError.textContent = "⚠️ Exact duplicate reference number!";
-                    refNumError.classList.remove('hidden');
-                    refNumInput.classList.add('input-error');
-                    saveBtn.disabled = true;
+                    isDuplicate = true; refNumError.textContent = "⚠️ Exact duplicate reference number!"; refNumError.classList.remove('hidden'); refNumInput.classList.add('input-error'); saveBtn.disabled = true;
                 } else if (existsSuffix) {
-                    isDuplicate = true;
-                    refNumError.textContent = "⚠️ Matches the last 6 digits of an existing 13-digit Ref No.!";
-                    refNumError.classList.remove('hidden');
-                    refNumInput.classList.add('input-error');
-                    saveBtn.disabled = true;
+                    isDuplicate = true; refNumError.textContent = "⚠️ Matches the last 6 digits of an existing 13-digit Ref No.!"; refNumError.classList.remove('hidden'); refNumInput.classList.add('input-error'); saveBtn.disabled = true;
                 } else {
-                    isDuplicate = false;
-                    refNumError.classList.add('hidden');
-                    refNumInput.classList.remove('input-error');
-                    saveBtn.disabled = false;
+                    isDuplicate = false; refNumError.classList.add('hidden'); refNumInput.classList.remove('input-error'); saveBtn.disabled = false;
                 }
             });
             
@@ -345,61 +353,111 @@
                 if (confirmInput.value === 'CONFIRM') { transactions = []; localStorage.removeItem('ck_transactions'); clearAllModal.classList.add('hidden'); currentPage = 1; renderAll(); showToast("✅ All data cleared successfully!"); }
             });
 
-            // OCR / SCAN LOGIC
+            // --- SMART SELECT (GOOGLE LENS STYLE) LOGIC ---
             const scanRefBtn = document.getElementById('scanRefBtn');
             const cameraInput = document.getElementById('cameraInput');
+            const smartSelectModal = document.getElementById('smartSelectModal');
+            const ocrPreviewImg = document.getElementById('ocrPreviewImg');
+            const wordOverlay = document.getElementById('wordOverlay');
+            const confirmSelectionBtn = document.getElementById('confirmSelectionBtn');
 
             scanRefBtn.addEventListener('click', () => cameraInput.click());
+
+            document.getElementById('closeSelectModal').addEventListener('click', () => smartSelectModal.classList.add('hidden'));
+            document.getElementById('clearSelectionBtn').addEventListener('click', () => {
+                selectedWords = [];
+                document.querySelectorAll('.word-box').forEach(btn => btn.classList.remove('selected'));
+                confirmSelectionBtn.disabled = true;
+            });
+
+            confirmSelectionBtn.addEventListener('click', () => {
+                if (selectedWords.length === 0) return;
+                // Sort by original index to maintain reading order
+                selectedWords.sort((a, b) => a.idx - b.idx);
+                const extractedText = selectedWords.map(w => w.text).join('').replace(/\s+/g, '');
+                
+                document.getElementById('refNum').value = extractedText;
+                document.getElementById('refNum').dispatchEvent(new Event('input'));
+                smartSelectModal.classList.add('hidden');
+                showToast("✅ Text extracted successfully!");
+            });
 
             cameraInput.addEventListener('change', async (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
 
-                showToast("📷 Processing image...");
+                const loadingOverlay = document.getElementById('loadingOverlay');
+                document.getElementById('loadingText').textContent = 'Processing image...';
+                loadingOverlay.classList.remove('hidden');
                 scanRefBtn.disabled = true;
-                const originalBtnHtml = scanRefBtn.innerHTML;
-                scanRefBtn.innerHTML = 'Scanning...';
 
                 try {
                     const processedImage = await preprocessImage(file);
-                    const { data: { text } } = await Tesseract.recognize(processedImage, 'eng', {
+                    
+                    document.getElementById('loadingText').textContent = 'AI is reading text... 0%';
+                    
+                    const { data } = await Tesseract.recognize(processedImage, 'eng', {
                         logger: m => {
                             if(m.status === 'recognizing text') {
-                                document.getElementById('loadingText').textContent = `Scanning: ${Math.round(m.progress * 100)}%`;
-                                document.getElementById('loadingOverlay').classList.remove('hidden');
+                                document.getElementById('loadingText').textContent = `AI is reading text... ${Math.round(m.progress * 100)}%`;
                             }
                         }
                     });
-                    document.getElementById('loadingOverlay').classList.add('hidden');
+                    
+                    loadingOverlay.classList.add('hidden');
 
-                    let extractedNumber = "";
-                    const refNoRegex = /Ref\s*\.?\s*No\s*\.?\s*[:\-]?\s*(\d{13})/i;
-                    const match = text.match(refNoRegex);
+                    // Setup Smart Select Modal
+                    ocrPreviewImg.src = processedImage;
+                    wordOverlay.innerHTML = '';
+                    selectedWords = [];
+                    confirmSelectionBtn.disabled = true;
 
-                    if (match && match[1]) {
-                        extractedNumber = match[1];
-                    } else {
-                        const fallbackRegex = /\b(\d{13})\b/;
-                        const fallbackMatch = text.match(fallbackRegex);
-                        if (fallbackMatch && fallbackMatch[1]) {
-                            extractedNumber = fallbackMatch[1];
-                        }
-                    }
+                    ocrPreviewImg.onload = () => {
+                        // Calculate scale between displayed image and natural image
+                        const scaleX = ocrPreviewImg.clientWidth / ocrPreviewImg.naturalWidth;
+                        const scaleY = ocrPreviewImg.clientHeight / ocrPreviewImg.naturalHeight;
 
-                    if (extractedNumber) {
-                        refNumInput.value = extractedNumber;
-                        refNumInput.dispatchEvent(new Event('input')); // Trigger duplicate check
-                        showToast("✅ Reference number scanned successfully!");
-                    } else {
-                        showToast("⚠️ Could not find 13-digit Ref No. Try a clearer picture.");
-                    }
+                        data.words.forEach((word, index) => {
+                            // Filter out low confidence or tiny noise
+                            if (word.confidence < 40) return;
+
+                            const btn = document.createElement('button');
+                            btn.type = 'button';
+                            btn.className = 'word-box absolute border border-blue-400 bg-blue-100/20 text-transparent rounded-sm hover:bg-blue-200/40';
+                            
+                            // Add slight padding for easier tapping on mobile
+                            const paddingX = 2 * scaleX;
+                            const paddingY = 2 * scaleY;
+
+                            btn.style.left = `${(word.bbox.x0 * scaleX) - paddingX}px`;
+                            btn.style.top = `${(word.bbox.y0 * scaleY) - paddingY}px`;
+                            btn.style.width = `${((word.bbox.x1 - word.bbox.x0) * scaleX) + (paddingX * 2)}px`;
+                            btn.style.height = `${((word.bbox.y1 - word.bbox.y0) * scaleY) + (paddingY * 2)}px`;
+                            
+                            btn.dataset.text = word.text;
+                            btn.dataset.idx = index;
+
+                            btn.onclick = () => {
+                                if (btn.classList.contains('selected')) {
+                                    btn.classList.remove('selected');
+                                    selectedWords = selectedWords.filter(w => w.idx !== index);
+                                } else {
+                                    btn.classList.add('selected');
+                                    selectedWords.push({ text: word.text, idx: index });
+                                }
+                                confirmSelectionBtn.disabled = selectedWords.length === 0;
+                            };
+                            wordOverlay.appendChild(btn);
+                        });
+                        
+                        smartSelectModal.classList.remove('hidden');
+                    };
                 } catch (err) {
                     console.error(err);
-                    document.getElementById('loadingOverlay').classList.add('hidden');
+                    loadingOverlay.classList.add('hidden');
                     showToast("❌ Error scanning image.");
                 } finally {
                     scanRefBtn.disabled = false;
-                    scanRefBtn.innerHTML = originalBtnHtml;
                     cameraInput.value = '';
                 }
             });
@@ -424,7 +482,6 @@
 
                     const imageData = ctx.getImageData(0, 0, width, height);
                     const data = imageData.data;
-
                     for (let i = 0; i < data.length; i += 4) {
                         const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
                         const val = avg > 140 ? 255 : 0;
